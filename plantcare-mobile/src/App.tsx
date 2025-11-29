@@ -7,26 +7,18 @@ import SettingsScreen from "./screens/SettingsScreen";
 import NotificationsModal from "./components/NotificationsModal";
 import AddPlantModal from "./components/AddPlantModal";
 import NavigationBar from "./components/NavigationBar";
-import apiService, { Plant } from "./services/api";
+import apiService, { Plant, Notification } from "./services/api";
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState("home");
-  const [selectedPlant, setSelectedPlant] = useState(0);
-  const [darkMode, setDarkMode] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showAddPlant, setShowAddPlant] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<string>("home");
+  const [selectedPlant, setSelectedPlant] = useState<number>(0);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [showAddPlant, setShowAddPlant] = useState<boolean>(false);
 
   const [plants, setPlants] = useState<Plant[]>([]);
-
-  const [notifications, setNotifications] = useState<Array<{
-    id: number;
-    type: "success" | "warning" | "danger";
-    message: string;
-    time: string;
-    plant: string;
-  }>>([]);
-
-  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const [settings, setSettings] = useState({
     notifications: true,
@@ -37,35 +29,47 @@ export default function App() {
     tempMax: 28,
   });
 
-  // Fetch initial data and set up polling
+  // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Timeout de secours pour éviter que l'app reste bloquée
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Timeout: La connexion prend trop de temps")), 10000)
+
+        // Timeout de secours
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(new Error("Timeout: La connexion prend trop de temps")),
+            10000
+          )
         );
-        
-        const [plantsData, notificationsData] = await Promise.all([
-          Promise.race([apiService.getPlants(), timeoutPromise]) as Promise<Plant[]>,
-          apiService.getNotifications().catch(() => []), // Ne pas bloquer si notifications échouent
+
+        const plantsData = await Promise.race([
+          apiService.getPlants(),
+          timeoutPromise,
         ]);
+
         setPlants(plantsData);
+
+        // Charger les notifications sans bloquer
+        const notificationsData = await apiService
+          .getNotifications()
+          .catch(() => []);
         setNotifications(notificationsData);
+
+        setLoading(false);
       } catch (error: any) {
         console.error("Error fetching data:", error);
-        const errorMessage = error?.message || "Erreur inconnue";
-        Alert.alert(
-          "Erreur de connexion",
-          `${errorMessage}\n\nVérifications:\n1. Backend démarré? (cd backend && npm start)\n2. ngrok tourne? (ngrok http 3000)\n3. URL ngrok correcte dans api.ts?\n4. Testez dans Safari: https://2a4f7a5fe0fe.ngrok-free.app/api/plants`,
-          [{ text: "OK", onPress: () => setLoading(false) }]
-        );
-        // S'assurer que le loading se termine même si l'alert est ignorée
         setLoading(false);
-      } finally {
-        // Double sécurité pour s'assurer que loading se termine
-        setTimeout(() => setLoading(false), 500);
+
+        Alert.alert(
+          "❌ Erreur de connexion",
+          error?.message || "Impossible de se connecter au serveur",
+          [
+            { text: "Réessayer", onPress: () => fetchData() },
+            { text: "Annuler", style: "cancel" },
+          ]
+        );
       }
     };
 
@@ -82,41 +86,75 @@ export default function App() {
         setNotifications(notificationsData);
       } catch (error) {
         console.error("Error polling data:", error);
+        // Ne pas afficher d'erreur pour le polling automatique
       }
     }, 5000);
 
     return () => clearInterval(interval);
   }, []);
 
-  const waterPlant = async (plantId: number) => {
+  const waterPlant = async (plantId: number): Promise<void> => {
     try {
+      console.log(`💧 Watering plant ${plantId}...`);
+
       const updatedPlant = await apiService.waterPlant(plantId);
+
+      // Mettre à jour la liste des plantes
       setPlants((prev) =>
         prev.map((p) => (p.id === plantId ? updatedPlant : p))
       );
-      
-      // Refresh notifications
-      const notificationsData = await apiService.getNotifications();
+
+      // Rafraîchir les notifications
+      const notificationsData = await apiService
+        .getNotifications()
+        .catch(() => []);
       setNotifications(notificationsData);
-    } catch (error) {
-      console.error("Error watering plant:", error);
-      Alert.alert("Erreur", "Impossible d'arroser la plante. Réessayez plus tard.");
+
+      console.log("✅ Plant watered successfully");
+    } catch (error: any) {
+      console.error("❌ Error watering plant:", error);
+      throw error; // Re-throw pour que DetailScreen puisse gérer l'erreur
     }
   };
 
-  const addNewPlant = async (data: any) => {
+  const addNewPlant = async (plant: {
+    name: string;
+    type: string;
+    room: string;
+    image: string;
+    wateringFrequency: number;
+  }): Promise<void> => {
     try {
-      const newPlant = await apiService.addPlant(data);
+      console.log("🌱 Adding new plant...");
+
+      const newPlant = await apiService.addPlant(plant);
+
       setPlants((prev) => [...prev, newPlant]);
       setShowAddPlant(false);
-    } catch (error) {
-      console.error("Error adding plant:", error);
-      Alert.alert("Erreur", "Impossible d'ajouter la plante. Réessayez plus tard.");
+
+      Alert.alert("✅ Succès", `${newPlant.name} a été ajoutée!`);
+    } catch (error: any) {
+      console.error("❌ Error adding plant:", error);
+      Alert.alert(
+        "❌ Erreur",
+        error.message || "Impossible d'ajouter la plante. Réessayez plus tard."
+      );
     }
   };
 
-  const getDaysSinceWatered = (date: any) =>
-    Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
+  const getDaysSinceWatered = (date: Date | string): number => {
+    try {
+      const lastWatered = new Date(date);
+      const days = Math.floor((Date.now() - lastWatered.getTime()) / 86400000);
+      return Math.max(0, days); // Ne jamais retourner un nombre négatif
+    } catch (error) {
+      console.error("Error calculating days:", error);
+      return 0;
+    }
+  };
+
+  // Éviter le crash si plants est vide
+  const currentPlant = plants[selectedPlant];
 
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.containerDark]}>
@@ -136,9 +174,9 @@ export default function App() {
             setShowAddPlant={setShowAddPlant}
           />
         )}
-        {currentScreen === "detail" && plants[selectedPlant] && (
+        {currentScreen === "detail" && currentPlant && (
           <DetailScreen
-            plant={plants[selectedPlant]}
+            plant={currentPlant}
             darkMode={darkMode}
             setCurrentScreen={setCurrentScreen}
             waterPlant={waterPlant}

@@ -17,7 +17,7 @@ interface NotificationsModalProps {
     type: string;
     message: string;
     time: string;
-    plant: string;
+    plant?: string; // ✅ FIXED: plant est optionnel
   }>;
   darkMode: boolean;
 }
@@ -46,24 +46,34 @@ const NotificationsModal: React.FC<NotificationsModalProps> = ({
           </View>
 
           <ScrollView>
-            {notifications.map((notif) => (
-              <View
-                key={notif.id}
-                style={[
-                  styles.notifCard,
-                  notif.type === "danger" && styles.notifDanger,
-                  notif.type === "warning" && styles.notifWarning,
-                  notif.type === "success" && styles.notifSuccess,
-                ]}
-              >
-                <Text style={[styles.message, { color: textColor }]}>
-                  {notif.message}
-                </Text>
-                <Text style={[styles.time, { color: subtextColor }]}>
-                  {notif.time}
+            {notifications.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Feather name="bell-off" size={48} color={subtextColor} />
+                <Text style={[styles.emptyText, { color: subtextColor }]}>
+                  Aucune notification
                 </Text>
               </View>
-            ))}
+            ) : (
+              notifications.map((notif) => (
+                <View
+                  key={notif.id}
+                  style={[
+                    styles.notifCard,
+                    notif.type === "danger" && styles.notifDanger,
+                    notif.type === "warning" && styles.notifWarning,
+                    notif.type === "success" && styles.notifSuccess,
+                    notif.type === "ml" && styles.notifMl,
+                  ]}
+                >
+                  <Text style={[styles.message, { color: textColor }]}>
+                    {notif.message}
+                  </Text>
+                  <Text style={[styles.time, { color: subtextColor }]}>
+                    {notif.time}
+                  </Text>
+                </View>
+              ))
+            )}
           </ScrollView>
         </View>
       </View>
@@ -93,6 +103,14 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
   },
+  emptyContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    marginTop: 12,
+  },
   notifCard: {
     padding: 12,
     borderRadius: 12,
@@ -110,6 +128,10 @@ const styles = StyleSheet.create({
   notifSuccess: {
     backgroundColor: "#dcfce7",
     borderLeftColor: "#10b981",
+  },
+  notifMl: {
+    backgroundColor: "#dbeafe",
+    borderLeftColor: "#3b82f6",
   },
   message: {
     fontSize: 14,

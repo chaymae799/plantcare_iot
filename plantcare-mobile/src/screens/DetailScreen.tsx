@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
@@ -19,12 +21,34 @@ const DetailScreen = ({
   waterPlant,
   getDaysSinceWatered,
 }: any) => {
+  const [isWatering, setIsWatering] = useState(false);
+
   const textColor = darkMode ? "#fff" : "#1f2937";
   const cardBg = darkMode ? "#0b1220" : "#fff";
   const subtextColor = darkMode ? "#9ca3af" : "#6b7280";
   const chartBg = darkMode ? "#1f2937" : "#fff";
 
-  const chartData = plant.history.slice(-10);
+  // S'assurer que history existe et contient des données
+  const hasHistory =
+    plant.history && Array.isArray(plant.history) && plant.history.length > 0;
+  const chartData = hasHistory ? plant.history.slice(-10) : [];
+
+  console.log("📊 Chart data:", chartData.length, "points");
+
+  const handleWaterPlant = async () => {
+    setIsWatering(true);
+    try {
+      await waterPlant(plant.id);
+      Alert.alert("✅ Succès", `${plant.name} a été arrosée!`);
+    } catch (error: any) {
+      Alert.alert(
+        "❌ Erreur",
+        error.message || "Impossible d'arroser la plante. Réessayez plus tard."
+      );
+    } finally {
+      setIsWatering(false);
+    }
+  };
 
   return (
     <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
@@ -51,27 +75,54 @@ const DetailScreen = ({
         {chartData.length > 0 ? (
           <LineChart
             data={{
-              labels: chartData.map((d: any) => d.time),
-              datasets: [{ data: chartData.map((d: any) => d.humidite) }],
+              labels: chartData.map(
+                (d: any, i: number) => (i % 2 === 0 ? d.time : "") // Afficher 1 label sur 2 pour éviter surcharge
+              ),
+              datasets: [
+                {
+                  data: chartData.map((d: any) => d.humidite),
+                  color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+                  strokeWidth: 2,
+                },
+              ],
             }}
-            width={screenW}
-            height={200}
+            width={screenW - 32}
+            height={220}
             chartConfig={{
               backgroundGradientFrom: chartBg,
               backgroundGradientTo: chartBg,
               decimalPlaces: 1,
-              color: () => "#3b82f6",
-              labelColor: () => subtextColor,
-              style: { borderRadius: 16 },
+              color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+              labelColor: (opacity = 1) => subtextColor,
+              style: {
+                borderRadius: 16,
+              },
+              propsForDots: {
+                r: "4",
+                strokeWidth: "2",
+                stroke: "#3b82f6",
+              },
             }}
             bezier
+            style={{
+              marginVertical: 8,
+              borderRadius: 16,
+            }}
           />
         ) : (
-          <Text
-            style={[styles.subtitle, { color: subtextColor, marginTop: 10 }]}
-          >
-            Pas encore de données
-          </Text>
+          <View style={styles.noDataContainer}>
+            <Feather name="clock" size={32} color={subtextColor} />
+            <Text
+              style={[styles.subtitle, { color: subtextColor, marginTop: 10 }]}
+            >
+              Pas encore de données
+            </Text>
+            <Text
+              style={[styles.noDataText, { color: subtextColor, marginTop: 4 }]}
+            >
+              Les données s'afficheront après quelques minutes
+            </Text>
+          </View>
         )}
       </View>
 
@@ -138,11 +189,18 @@ const DetailScreen = ({
       </View>
 
       <TouchableOpacity
-        style={styles.waterBtn}
-        onPress={() => waterPlant(plant.id)}
+        style={[styles.waterBtn, isWatering && styles.waterBtnDisabled]}
+        onPress={handleWaterPlant}
+        disabled={isWatering}
       >
-        <Feather name="droplet" size={18} color="#fff" />
-        <Text style={styles.waterBtnText}>Arroser maintenant</Text>
+        {isWatering ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <Feather name="droplet" size={18} color="#fff" />
+            <Text style={styles.waterBtnText}>Arroser maintenant</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       <View style={{ height: 100 }} />
@@ -163,6 +221,14 @@ const styles = StyleSheet.create({
   largeEmoji: { fontSize: 48 },
   card: { padding: 16, borderRadius: 16, marginBottom: 16 },
   cardTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
+  noDataContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  noDataText: {
+    fontSize: 12,
+    textAlign: "center",
+  },
   sensorRow: { flexDirection: "row", justifyContent: "space-around" },
   sensorBlock: { alignItems: "center" },
   sensorLabel: { fontSize: 12, marginTop: 8 },
@@ -182,6 +248,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
+  },
+  waterBtnDisabled: {
+    backgroundColor: "#94a3b8",
   },
   waterBtnText: {
     color: "#fff",

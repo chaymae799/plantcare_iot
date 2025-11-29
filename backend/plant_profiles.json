@@ -1,0 +1,32 @@
+[
+  {
+    "type": "Tropicale",
+    "name": "Tropicale (général)",
+    "humidite_min": 50,
+    "humidite_max": 80,
+    "temp_min": 18,
+    "temp_max": 28,
+    "lumiere_min": 40,
+    "lumiere_max": 80
+  },
+  {
+    "type": "Succulente",
+    "name": "Succulente (général)",
+    "humidite_min": 5,
+    "humidite_max": 30,
+    "temp_min": 15,
+    "temp_max": 35,
+    "lumiere_min": 60,
+    "lumiere_max": 95
+  },
+  {
+    "type": "Générale",
+    "name": "Générale",
+    "humidite_min": 30,
+    "humidite_max": 70,
+    "temp_min": 15,
+    "temp_max": 30,
+    "lumiere_min": 20,
+    "lumiere_max": 90
+  }
+]

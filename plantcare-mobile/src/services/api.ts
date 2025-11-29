@@ -1,12 +1,12 @@
 // API service pour communiquer avec le backend
 
-// URL ngrok (obtenue avec: ngrok http 3000)
-// ⚠️ IMPORTANT: Si vous redémarrez ngrok, cette URL change!
-const NGROK_URL = "https://42cc1439266a.ngrok-free.app"; // ⚠️ Remplacez si ngrok redémarre!
+// ⚠️ IMPORTANT: Mettez à jour cette URL avec votre ngrok actuel!
+// Pour obtenir l'URL: lancez "ngrok http 3000" dans un terminal
+const NGROK_URL = "https://2b0626f98b28.ngrok-free.app"; // ⚠️ À METTRE À JOUR!
 
 const API_BASE_URL = __DEV__
-  ? `${NGROK_URL}/api` // Development - utilise ngrok tunnel
-  : "https://your-production-url.com/api"; // Production - à configurer
+  ? `${NGROK_URL}/api`
+  : "https://your-production-url.com/api";
 
 export interface Plant {
   id: number;
@@ -20,7 +20,7 @@ export interface Plant {
   lastWatered: string | Date;
   health: number;
   wateringFrequency: number;
-  history: Array<{
+  history?: Array<{
     time: string;
     humidite: number;
     temperature: number;
@@ -30,10 +30,10 @@ export interface Plant {
 
 export interface Notification {
   id: number;
-  type: "success" | "warning" | "danger";
+  type: "success" | "warning" | "danger" | "ml";
   message: string;
   time: string;
-  plant: string;
+  plant?: string;
 }
 
 class ApiService {
@@ -43,95 +43,85 @@ class ApiService {
     this.baseUrl = API_BASE_URL;
   }
 
+  private async fetchWithTimeout(
+    url: string,
+    options: any = {},
+    timeout = 8000
+  ) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "ngrok-skip-browser-warning": "true",
+          ...options.headers,
+        },
+      });
+
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === "AbortError") {
+        throw new Error(
+          "⏱️ Timeout de connexion. Vérifiez que le backend est démarré."
+        );
+      }
+      throw error;
+    }
+  }
+
   // GET all plants
   async getPlants(): Promise<Plant[]> {
     const url = `${this.baseUrl}/plants`;
     console.log("🌱 Fetching plants from:", url);
 
-    const controller = new AbortController();
-    // Réduire le timeout à 5 secondes pour détecter les problèmes plus rapidement
-    const timeoutId = setTimeout(() => {
-      console.error("⏱️ Timeout après 5 secondes - connexion impossible");
-      controller.abort();
-    }, 5000); // 5 secondes timeout
-
     try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "ngrok-skip-browser-warning": "true", // Contourne la page de warning ngrok
-        },
-        // Ajouter des options pour détecter les erreurs réseau plus rapidement
-        cache: "no-cache",
-      });
-
-      clearTimeout(timeoutId);
-
-      console.log("✅ Response status:", response.status);
+      const response = await this.fetchWithTimeout(url, { method: "GET" });
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error("❌ Response error:", errorText);
-        throw new Error(
-          `Failed to fetch plants: ${response.status} ${response.statusText}`
-        );
-      }
-
-      // Vérifier si la réponse est du JSON (pas la page de warning ngrok)
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("❌ Réponse n'est pas du JSON:", text.substring(0, 200));
-        throw new Error("Réponse invalide du serveur (page de warning ngrok?)");
+        throw new Error(`Erreur serveur: ${response.status}`);
       }
 
       const data = await response.json();
       console.log("✅ Plants fetched:", data.length);
+
       return data.map((plant: any) => ({
         ...plant,
         lastWatered: new Date(plant.lastWatered),
+        history: plant.history || [], // S'assurer que history existe
       }));
     } catch (error: any) {
-      clearTimeout(timeoutId);
-      if (error.name === "AbortError" || error.message.includes("aborted")) {
-        console.error("❌ Connection timeout to:", url);
-        const baseUrl = this.baseUrl.replace("/api", "");
-        throw new Error(
-          `⏱️ Timeout de connexion (5s)\n\nVérifiez:\n1. Backend démarré? → http://${baseUrl.replace(
-            "http://",
-            ""
-          )}/api/plants\n2. IP correcte dans api.ts?\n3. Même réseau Wi-Fi?\n4. Firewall autorise port 3000?`
-        );
-      }
-      if (
-        error.message.includes("Network request failed") ||
-        error.message.includes("Failed to fetch")
-      ) {
-        console.error("❌ Network error:", error.message);
-        const baseUrl = this.baseUrl.replace("/api", "");
-        throw new Error(
-          `🌐 Erreur réseau\n\nImpossible de se connecter à:\n${baseUrl}\n\nVérifiez:\n1. Backend démarré?\n2. IP correcte: ${baseUrl}\n3. Testez dans Safari: ${baseUrl}/api/plants`
-        );
-      }
       console.error("❌ Error fetching plants:", error.message);
-      throw error;
+      throw new Error(
+        `Impossible de charger les plantes.\n\nVérifiez:\n1. Backend démarré?\n2. URL ngrok correcte?\n3. Même réseau Wi-Fi?`
+      );
     }
   }
 
   // GET single plant
   async getPlant(id: number): Promise<Plant> {
     try {
-      const response = await fetch(`${this.baseUrl}/plants/${id}`);
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/plants/${id}`
+      );
+
       if (!response.ok) {
-        throw new Error("Failed to fetch plant");
+        throw new Error("Plante introuvable");
       }
+
       const data = await response.json();
       return {
         ...data,
         lastWatered: new Date(data.lastWatered),
+        history: data.history || [],
       };
     } catch (error) {
       console.error("Error fetching plant:", error);
@@ -142,11 +132,19 @@ class ApiService {
   // GET sensor data for a plant
   async getSensorData(plantId: number) {
     try {
-      const response = await fetch(`${this.baseUrl}/plants/${plantId}/sensors`);
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/plants/${plantId}/sensors`
+      );
+
       if (!response.ok) {
-        throw new Error("Failed to fetch sensor data");
+        throw new Error("Impossible de charger les capteurs");
       }
-      return await response.json();
+
+      const data = await response.json();
+      return {
+        current: data.current,
+        history: data.history || [],
+      };
     } catch (error) {
       console.error("Error fetching sensor data:", error);
       throw error;
@@ -156,37 +154,39 @@ class ApiService {
   // POST - Water a plant
   async waterPlant(plantId: number): Promise<Plant> {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // Réduire à 5 secondes
+      console.log(`💧 Watering plant ${plantId}...`);
 
-      const response = await fetch(`${this.baseUrl}/plants/${plantId}/water`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true", // Contourne la page de warning ngrok
-        },
-        cache: "no-cache",
-      });
-
-      clearTimeout(timeoutId);
+      const response = await this.fetchWithTimeout(
+        `${this.baseUrl}/plants/${plantId}/water`,
+        {
+          method: "POST",
+        }
+      );
 
       if (!response.ok) {
-        throw new Error("Failed to water plant");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Water error:", errorData);
+        throw new Error(errorData.message || "Impossible d'arroser la plante");
       }
-      const data = await response.json();
+
+      const result = await response.json();
+      console.log("✅ Plant watered successfully:", result);
+
+      // IMPORTANT: Le serveur retourne { success, message, data: {...plant} }
+      if (!result.data) {
+        throw new Error("Réponse serveur invalide");
+      }
+
       return {
-        ...data.plant,
-        lastWatered: new Date(data.plant.lastWatered),
+        ...result.data,
+        lastWatered: new Date(result.data.lastWatered),
+        history: result.data.history || [],
       };
     } catch (error: any) {
-      if (error.name === "AbortError" || error.message.includes("aborted")) {
-        throw new Error(
-          "⏱️ Timeout de connexion. Vérifiez que le backend est démarré."
-        );
-      }
-      console.error("Error watering plant:", error);
-      throw error;
+      console.error("❌ Error watering plant:", error);
+      throw new Error(
+        error.message || "Impossible d'arroser la plante. Réessayez plus tard."
+      );
     }
   }
 
@@ -199,25 +199,36 @@ class ApiService {
     wateringFrequency: number;
   }): Promise<Plant> {
     try {
-      const response = await fetch(`${this.baseUrl}/plants`, {
+      console.log("🌱 Adding new plant:", plantData);
+
+      // Validation côté client
+      if (!plantData.name || !plantData.type) {
+        throw new Error("Le nom et le type sont requis");
+      }
+
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/plants`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true", // Contourne la page de warning ngrok
-        },
         body: JSON.stringify(plantData),
       });
+
       if (!response.ok) {
-        throw new Error("Failed to add plant");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Impossible d'ajouter la plante");
       }
+
       const data = await response.json();
+      console.log("✅ Plant added successfully:", data);
+
       return {
         ...data,
         lastWatered: new Date(data.lastWatered),
+        history: data.history || [],
       };
-    } catch (error) {
-      console.error("Error adding plant:", error);
-      throw error;
+    } catch (error: any) {
+      console.error("❌ Error adding plant:", error);
+      throw new Error(
+        error.message || "Impossible d'ajouter la plante. Réessayez plus tard."
+      );
     }
   }
 
@@ -226,34 +237,23 @@ class ApiService {
     const url = `${this.baseUrl}/notifications`;
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // Réduire à 5 secondes
-
-      const response = await fetch(url, {
-        signal: controller.signal,
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "ngrok-skip-browser-warning": "true", // Contourne la page de warning ngrok
-        },
-        cache: "no-cache",
-      });
-
-      clearTimeout(timeoutId);
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET" },
+        5000
+      );
 
       if (!response.ok) {
-        throw new Error("Failed to fetch notifications");
-      }
-      return await response.json();
-    } catch (error: any) {
-      if (error.name === "AbortError" || error.message.includes("aborted")) {
-        console.error("❌ Connection timeout to:", url);
-        // Ne pas bloquer si les notifications échouent
+        console.warn("Failed to fetch notifications");
         return [];
       }
-      console.error("Error fetching notifications:", error);
-      return []; // Retourner un tableau vide au lieu de throw
+
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error("Error fetching notifications:", error.message);
+      // Ne pas bloquer l'app si les notifications échouent
+      return [];
     }
   }
 }
